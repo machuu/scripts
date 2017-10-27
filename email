@@ -1,0 +1,231 @@
+#!/usr/bin/env bash
+#
+# Send Email for CVP Scripts
+
+this_script_name="$(basename "$0")"
+
+function usage {
+	{
+		if [[ $* != "" ]] ; then
+			echo -e "$*"
+		fi
+		echo -e "Send Email for CVP Scripts"
+		echo -e ""
+		echo -e "$this_script_name [--name 'email_name'] "
+		echo -e "Automate writing and sending emails from a script. This script will take care of recording the email content,"
+		echo -e "First line of the email file is the Subject, subsequent lines are the email body"
+		echo -e "You can run from the terminal or script. If writing multiple emails from the same"
+		echo -e "process, use '--new' or '--delete' to start a new email file"
+		echo -e "\t--name\tName of Email file, defaults to PID of process that called this script"
+		echo -e "\t--append\tText to append. "
+		echo -e "\t\tDefault option for arguments with no flag"
+		echo -e "\t\tBackslash escapes will be interpreted with BASH's 'echo -e' command"
+		echo -e "\t--attach <file_path>\tAttach file to email. Multiple files can be attached"
+		echo -e "\t--subject\tSubject line of email"
+		echo -e "\t--from | --sender <user@example.com>\tProvide From: Email Address"
+		echo -e "\t\tIf provided multiple times, only the last address will be used"
+		echo -e "\t--recipients [To:|CC:|BCC:] <user1@example.com>[,<user2@example.com>,...]\tProvide Recipient Email Addresses"
+		echo -e "\t\tIf list is preceded by [To:|CC:|BCC:], those recipients will be added to the appropriate block"
+		echo -e "\t--send\tSend the email"
+		echo -e "\t--new | --delete\tDelete the email file"
+		echo -e ""
+		echo -e "Example Email"
+		echo -e "\t$this_script_name --new"
+		echo -e "\t$this_script_name --sender sender@domain.com"
+		echo -e "\t$this_script_name --append 'Greetings Recipient,\n'"
+		echo -e "\t$this_script_name 'here is some text on line 1\nand some text on line 2"
+		echo -e "\t$this_script_name --append 'some more text on line 3'"
+		echo -e "\t$this_script_name --attach '/tmp/filename"
+		echo -e "\t$this_script_name --recipients 'user1@example.com'"
+		echo -e "\t$this_script_name --recipients 'To: user2@example.com'"
+		echo -e "\t$this_script_name --recipients 'CC: user3@example.com,user4@example.com'"
+		echo -e "\t$this_script_name --recipients 'BCC: user5@example.com'"
+		echo -e "\t$this_script_name --send"
+	} >&2
+}
+
+function check_email_file {
+	if [[ -s "$email_file" ]] ; then
+		return 0
+	else
+		# This will make a new file with one blank line
+		# Blank Line is used as a separator for Email Header and Body
+		append "\n"
+		echo "New email file at '$email_file'"
+	fi
+}
+
+function delete {
+	local attachments="$email_file.attachments"
+	[[ -s "$email_file" ]]  && rm "$email_file"
+	[[ -s "$attachments" ]] && rm "$attachments"
+}
+
+function archive {
+	local attachments="$email_file.attachments"
+	local archive_timestamp="$(date +%s)"
+
+	[[ -f "$email_file" ]]  && mv "$email_file" "$email_file.$archive_timestamp"
+	[[ -f "$attachments" ]] && mv "$attachments" "$attachments.$archive_timestamp"
+}
+
+function append {
+	echo -en "$*" >> "$email_file"
+}
+
+function recipients {
+
+	local recipient_list="${1-$default_email_recipient}"
+
+	local recipient_type
+	local recipient_types_regex="^([tT][oO]|[cC][cC]|[bB][cC][cC]):"
+	if [[ $1 =~ $recipient_types_regex ]] ; then
+		recipient_type_regex="$1"
+		shift
+	else
+		recipient_type="To:"
+	fi
+
+	if grep -Pq "^$recipient_type " "$email_file" ; then
+		# Add recipients to existing declaration
+		sed -i "/^$recipient_type / s/$/,$recipient_list/" "$email_file"
+	else
+		# Add new recipient line before first blank line or Subject: line
+		sed -i -r "0,/(^$|^Subject:)/s//$recipient_type $recipient_list\n&/" "$email_file"
+	fi
+}
+
+function subject {
+	local subject="${1-""}"
+	local subject_line="Subject: $subject"
+
+	if grep -Pq "^Subject:" "$email_file" ; then
+		# Replace existing Subject line with new one
+		sed -i -r "0,/^Subject:.*/s//$subject_line/" "$email_file"
+	else
+		# Add Subject line before first blank line
+		sed -i -r "0,/(^$)/s//$subject_line\n&/" "$email_file"
+	fi
+}
+
+function sender {
+	local sender_address="${1-$default_email_sender}"
+
+	if grep -Pq "^From:" "$email_file" ; then
+		# Replace existing From line
+		sed -i -r "0,/^From:.*/s//$subject_line/" "$email_file"
+	else
+		# Add new From Line to line 1
+		sed -i "1i From: $sender_address" "$email_file"
+	fi
+}
+
+function check_sender {
+	if grep -Pq "^From:" "$email_file" ; then
+		return 0
+	else
+		# Set From: to default
+		sender
+	fi
+}
+
+function attach {
+	local attachment="$1"
+	local attachments="$email_file.attachments"
+
+	if [[ $attachment = get ]] ; then
+		cat "$attachments" | sed 's_^_ -a _g' | tr '\n' ' '
+	else
+		echo "$attachment" >> "$attachments"
+	fi
+}
+
+function send {
+	check_sender
+	if cat "$email_file" | mail -t $(attach get) ; then
+		archive
+	fi
+}
+
+# Unset any residual variables starting with 'action_'
+# Not sure where these would come from, but it might cause an error
+unset ${!action_*}
+
+while (( $# )) ; do
+	case "$1" in
+		--debug)
+			arg_debug=true
+			shift
+			;;
+		--help | -h | -\? )
+			usage
+			exit 0
+			;;
+		--name)
+			arg_email_name="$2"
+			shift 2
+			;;
+		--sender | --from )
+			action_sender="$2"
+			shift 2
+			;;
+		--recipients)
+			action_recipients="$2"
+			shift 2
+			;;
+		--subject)
+			action_subject="$2"
+			shift 2
+			;;
+		--append)
+			action_append+="\n$2"
+			shift 2
+			;;
+		--attach)
+			action_attach="$2"
+			shift 2
+			;;
+		--send)
+			action_send=true
+			shift 1
+			;;
+		--new | --delete )
+			action_delete=true
+			shift 1
+			;;
+		--archive )
+			action_archive=true
+			shift 1
+			;;
+		*)
+			action_append+=" $1"
+			shift
+			;;
+	esac
+done
+
+# Check for debug flag
+debug="${arg_debug-false}"
+$debug && set -x
+
+# Set filename of 'email_file'
+default_email_name="email.$PPID"
+email_file="/tmp/${arg_email_name-$default_email_name}"
+
+default_email_recipient="recipient@example.com"
+default_email_sender="sender@example.com"
+
+# Check if existing 'email_file' should be removed
+delete=${arg_delete-false}
+$delete && delete
+
+if [[ ${!action_*} = "" ]] ; then
+	exit 0
+else
+	check_email_file
+fi
+
+for argument in ${!action_*} ; do
+	action="${argument#action_}"
+	$action "${!argument}"
+done
