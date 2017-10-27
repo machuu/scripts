@@ -1,0 +1,121 @@
+#!/bin/bash
+# bash generate random alphanumeric string
+#
+
+function usage {
+	{
+		echo -e "Generate a random string/number"
+		echo -e ""
+		echo -e "Options:"
+		echo -e ""
+		echo -e "\t--type | -t\n\t\tType of random data: alpha, alnum, num, uuid\n\tdefault: alnum"
+		echo -e "\t--length | -l\n\t\tLength of random data\n\tdefault: 8"
+		echo -e ""
+		echo -e "Examples:"
+		echo -e "\tNew UUID\n\t\trandom -t uuid"
+		echo -e ""
+		echo -e ""
+	} >&2
+}
+
+function exit_script {
+	usage
+	exit 1
+}
+
+function error {
+	echo -e "$*" >&2
+}
+
+function generate_uuid {
+	# Length of UUID is always 32 characters
+	local length=32
+
+	# bash generate random 32 character alphanumeric string (uppercase only) and 
+	local uuid_base="$(cat /dev/urandom | tr -dc 'A-Z0-9' | head -c $length)"
+	echo $uuid_base | sed -r 's_(.{8})(.{4})(.{4})(.{4})(.{12})_\1-\2-\3-\4-\5_'
+}
+
+function generate_alpha {
+	# bash generate random alpha string (upper and lower case)
+	cat /dev/urandom | tr -dc 'a-zA-Z' | head -c $length
+}
+
+function generate_alnum {
+	# bash generate random alphanumeric string (lowercase only)
+	cat /dev/urandom | tr -dc 'a-z0-9' | head -c $length
+}
+
+function generate_num {
+	# bash generate random number, removing leading 0s if length > 1
+
+	# The content needs to be cut off before sed, since /dev/urandom will generate
+	# a continuous stream, and sed won't complete until the stream finishes.
+	# The numeric stream will cut at the desired length, plus a buffer, to allow leading 0s
+	# to be cut off.
+	# It's very unlikely there will be more than 100 leading 0s
+	local buffer_length=100
+
+	local buffered_number="$(cat /dev/urandom | tr -dc '0-9' | head -c $((length + buffer_length)) )"
+	
+	if [[ $length = 1 ]] ; then
+		echo $buffered_number | head -c $length
+	elif [[ $length > 1 ]] ; then
+		echo $buffered_number | sed 's_^0*__' | head -c $length
+	fi
+}
+
+function generate_port {
+	read LOWERPORT UPPERPORT < /proc/sys/net/ipv4/ip_local_port_range
+	while : ; do
+		PORT="`shuf -i $LOWERPORT-$UPPERPORT -n 1`"
+		ss -lpn | grep -q ":$PORT " || break
+	done
+	echo $PORT
+}
+
+types_regex='^(port|alpha|alnum|num|uuid)$'
+length_regex='^([0-9]+)$'
+
+while (( $# )) ; do
+	case $1 in
+		--type | -t )
+			arg_type="$2"
+			shft 2
+			;;
+		--length | -l )
+			arg_length="$2"
+			shift 2
+			;;
+		*)
+			if [[ $1 =~ $length_regex ]] ; then
+				if [[ ${arg_length-notset} = notset ]] ; then
+					arg_length="$1"
+				else
+					error "Extra argument '$1', length is already set as '$arg_length'"
+					exit_script
+				fi
+			elif [[ $1 =~ $types_regex ]] ; then
+				if [[ ${arg_type-notset} = notset ]] ; then
+					arg_type="$1"
+				else
+					error "Extra argument '$1', type is already set as '$arg_type'"
+					exit_script
+				fi
+			else
+				error "Invalid Argument '$1'"
+				exit_script
+			fi
+			shift
+			;;
+	esac
+done
+
+default_type="alnum"
+default_length="8"
+
+type="${arg_type-$default_type}"
+length="${arg_length-$default_length}"
+
+# echo from subshell, because output doesn't have EOL character
+echo "$(eval generate_$type "$length")"
