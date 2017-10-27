@@ -1,0 +1,223 @@
+#!/bin/bash
+#
+# useful console shortcuts
+# mostly ASCII escapes
+
+function consoleSavePos {
+	echo -en "\033[s"
+}
+
+function consoleRestorePos {
+	echo -en "\033[u"
+}
+
+function consoleResetLine {
+	echo -en "\033[K"
+}
+
+function clear_line {
+    case ${1-default} in
+        default | all )
+            echo -en "\033[2K"
+            ;;
+        left )
+            echo -en "\033[1K"
+            ;;
+        right )
+            echo -en "\033[0K"
+            ;;
+    esac
+}
+
+function clear_screen {
+    case ${1-default} in
+        default | all )
+            echo -en "\033[2J"
+            ;;
+        up )
+            echo -en "\033[1J"
+            ;;
+        down )
+            echo -en "\033[0J"
+            ;;
+    esac
+}
+
+function move_up {
+	count=${1-1}
+	echo -en "\033[${count}A"
+}
+
+function move_down {
+	count=${1-1}
+	echo -en "\033[${count}B"
+}
+
+function move_right {
+	count=${1-1}
+	echo -en "\033[${count}C"
+}
+
+function move_left {
+	count=${1-1}
+	echo -en "\033[${count}D"
+}
+
+function get_cursor_position {
+    echo -en "\033[6n" && read -sdR cursor_position
+    cursor_position=${cursor_position#*[}
+    cursor_position_regex="([0-9]+);([0-9]+)"
+    if [[ $cursor_position =~ $cursor_position_regex ]] ; then
+        row=${BASH_REMATCH[1]}
+        column=${BASH_REMATCH[2]}
+    else
+        row=0
+        column=0
+    fi
+}
+
+function get_column {
+    get_cursor_position
+    #echo $column
+}
+
+function get_row {
+    get_cursor_position
+    #echo $row
+}
+
+function goto_column {
+    move_left $terminal_columns
+	[[ ${1-0} > 0 ]] && move_right $1
+}
+
+function goto_row {
+    move_up $terminal_lines
+	[[ ${1-0} > 0 ]] && move_down $1
+}
+
+function set_color {
+	# Set terminal colors
+	#
+	# Given a color name and modifiers, build color_cmd
+	# starting from the 8 basic colors
+	#   - add 60 for bright/high intensity
+
+	local arg_bg
+	local arg_bright
+	local arg_class
+	local arg_color
+	local arg_color_cmd
+	local color_cmd
+	local arg_message
+
+	# Reset
+	local reset="0;"
+
+	# Regular Colors
+	local black="30"
+	local red="31"
+	local green="32"
+	local yellow="33"
+	local blue="34"
+	local purple="35"
+	local cyan="36"
+	local gray="37"
+	local white="37"
+
+	while (( $# )) ; do
+		case $1 in
+			normal)
+				arg_class="0"
+				;;
+			bold)
+				arg_class="1"
+				;;
+			underline)
+				arg_class="4"
+				;;
+			bg)
+				arg_bg=true
+				;;
+			bright)
+				arg_bright=true
+				;;
+			-m | --message)
+				shift
+				arg_message+="$1"
+				;;
+			*)
+				if [[ ${!1-notset} = notset ]] ; then
+					echo "Invalid color '$1'" >&2
+				else
+					arg_color="${!1}"
+				fi
+				;;
+		esac
+		shift
+
+		# build command if $arg_color is set
+		if [[ ${arg_color-""} != "" ]] ; then
+			${arg_bg-false}     && (( arg_color += 10 ))
+			${arg_bright-false} && (( arg_color += 60 ))
+
+			# Add arg_color_cmd to color_cmd
+			arg_color_cmd="${arg_class-0};$arg_color"
+			[[ ${color_cmd-""} != "" ]] && color_cmd+=";"
+			color_cmd+="$arg_color_cmd"
+
+			# Reset flags
+			arg_bg=false
+			arg_bright=false
+			arg_color=""
+			arg_color_cmd=""
+		fi
+	done
+
+	echo -ne "\033[${color_cmd}m"
+
+	if [[ ${arg_message-notset} != notset ]] ; then
+		echo "$arg_message"
+		echo -ne "\033[${reset}m"
+	fi
+}
+
+function redirect_output_to_terminal {
+	local this_tty="$(tty)"
+	exec &> "$this_tty"
+}
+redirect_output_to_terminal
+
+case $1 in
+	save*)
+		consoleSavePos
+		;;
+	restore*)
+		consoleRestorePos
+		;;
+	reset*)
+		consoleResetLine
+		;;
+	up | down | left | right)
+		direction=$1
+		move_$direction $2
+		;;
+    get )
+        item=$2
+        get_$item
+        ;;
+    goto )
+        item=$2
+        value=$3
+        goto_$item $value
+        ;;
+    clear )
+        item=$2
+        value=$3
+        clear_$item $value
+        ;;
+	color )
+		shift
+		set_color $*
+		;;
+esac
