@@ -1,0 +1,190 @@
+#!/bin/bash +e
+#
+# Different types of prompts
+
+function usage {
+	{
+	if [[ "$*" != "" ]] ; then
+		echo -e "$*"
+		echo
+	fi
+	echo "Prompt user for response"
+	echo "$0 input <max|exact> <char count> <message>"
+	echo "$0 <continue|skip|retry|confirm> <message>"
+	echo
+	echo "Examples:"
+	echo " Prompt user for exactly 5 characters"
+	echo "  $0 input -exact 5 'Enter 5 characters'"
+	echo "    Enter 5 characters >"
+	echo
+	echo " Prompt user for a maximum 20 characters"
+	echo "  $0 input -max 20 'Enter up to 20 characters'"
+	echo "    Enter up to 20 characters >"
+	echo
+	echo " Prompt user to confirm an action"
+	echo "  $0 confirm 'Are you sure you want to do this?'"
+	echo "    Are you sure you want to do this? (y/n) >"
+	echo
+	echo " Pause until user responds with a single entry"
+	echo "  $0 continue 'Test failed: Check loopback plug. Press any key to retry'"
+	echo "    Test failed: Check loopback plug. Press any key to retry..."
+	} >&2
+}
+
+function input {
+	case $1 in
+		-max | max )
+			limit_type=max
+			limit_count=$2
+			shift; shift
+			;;
+		-exact | exact )
+			limit_type=exact
+			limit_count=$2
+			shift; shift
+			;;
+		*)
+			limit_type=any
+			limit_count=0
+			;;
+	esac
+
+	while : ; do
+		prompt_for_response 0 "$* >"
+
+		if   [[ $limit_type = max   ]] && [[ ${#REPLY} -gt $limit_count ]] ; then
+			echo -e "Please enter no more than $limit_count characters" > $prompt_tty
+			continue
+		elif [[ $limit_type = exact ]] && [[ ${#REPLY} -ne $limit_count ]] ; then
+			echo -e "Please enter exactly $limit_count characters" > $prompt_tty
+			continue
+		fi
+		sleep 1
+		break
+	done
+
+	echo "$REPLY"
+}
+
+function pause {
+	prompt_for_response 1 "$*"
+	return 0
+}
+
+function confirm {
+	prompt_for_response 1 "$* (y/n)"
+	if [[ $REPLY =~ [yY] ]] ; then
+		exit 0
+	else
+		exit 1
+	fi
+}
+
+function alert_user {
+	# stubbed in for however you want to alert the user
+	# I had a separate script that depended on some other application specific tools
+	return 0
+}
+
+function prompt_for_response {
+	prompt_alert_timeout=10
+
+	case $1 in
+		0)
+			read_args=""
+			enter_pressed=true
+			;;
+		1)
+			read_args="-s -n $1"
+			enter_pressed=false
+			;;
+		[1-9]*)
+			read_args="-n $1"
+			enter_pressed=false
+			;;
+		*)
+			echo "Invalid argument for prompt length" >&2
+			echo "$1 should be an integer" >&2
+			exit 1
+			;;
+	esac
+	shift
+
+	set +e
+	local responded=false
+	prompt_string="$(echo -e `clry`$* `clrw`)"
+	while ! $responded ; do
+		while read -r -t 0; do read -r; done
+		if read $read_args -t $prompt_alert_timeout -p "$prompt_string" &> $prompt_tty ; then
+			responded=true
+		elif $alert ; then
+			alert_user
+		fi
+
+		# Clean up prompt lines
+		prompt_string_lines="$(echo "$prompt_string" | wc -l)"
+		$enter_pressed && $responded && (( prompt_string_lines+1 ))
+
+		for line in $( seq 1 $prompt_string_lines ) ; do
+			console left 100
+			console clear line all
+			console up
+		done
+		console down
+	done
+
+}
+
+while (( $# )) ; do
+	case $1 in
+		--help | -h | -\?)
+			usage
+			exit 0
+			;;
+		--no-alert)
+			arg_alert=false
+			;;
+		--debug)
+			arg_debug=true
+			;;
+		input | continue | retry | skip | confirm)
+			if [[ ${arg_mode-notset} = notset ]] ; then
+				arg_mode="$1"
+			else
+				prompt_message+=" $1"
+			fi
+			;;
+		*)
+			prompt_message+=" $1"
+			;;
+	esac
+	shift
+done
+
+debug="${arg_debug-false}"
+$debug && set -x
+
+alert="${arg_alert-true}"
+mode="${arg_mode-notset}"
+
+prompt_tty=$(tty)
+
+if [[ $mode = notset ]] ; then
+	usage "Error: no prompt type given"
+	exit 1
+fi
+
+case $mode in
+	input)
+		input $prompt_message
+		;;
+	continue | retry | skip)
+		pause $prompt_message
+		;;
+	confirm)
+		confirm $prompt_message
+		;;
+	*)
+		echo "Error: prompt type is '$mode'" >&2
+		;;
+esac
