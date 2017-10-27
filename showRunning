@@ -1,0 +1,52 @@
+#!/bin/bash
+#
+# Show a scrolling line of dots while a process runs in the background
+
+function resetLine {
+   echo -en "\033[u"
+   echo -en "\033[K"
+}
+
+command="$*"
+#echo "Running command - $command"
+
+exit_code_file="/tmp/showRunning_exit_code"
+stderr_file="/tmp/showRunning_stderr"
+stdout_file="/tmp/showRunning_stdout"
+
+# Run command in background
+eval "$command 2>$stderr_file > $stdout_file; echo \$? > $exit_code_file" &
+jobnumber=$!
+
+start_column=1
+term_columns=$(tput cols)
+if [[ $term_columns = '' ]] ; then
+	end_column="80"
+else
+	end_column="$term_columns"
+fi
+
+echo -en "\033[s"
+while ps -p $jobnumber > /dev/null ; do
+    if [[ $column = $end_column ]] ; then
+        resetLine
+        column=1
+    fi
+    echo -n "."
+    ((column+=1))
+done
+resetLine
+
+exit_code=$(cat $exit_code_file)
+if [[ $exit_code > 0 ]] ; then
+	cat $stderr_file >&2
+fi
+
+rm -f "$exit_code_file"
+rm -f "$stderr_file"
+rm -f "$stdout_file"
+
+#echo
+#echo "Finished"
+
+exit $exit_code
