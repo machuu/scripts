@@ -1,0 +1,258 @@
+#!/usr/bin/env bash
+#
+# Date Calculator
+#
+# Calculate dates by weeks, days, seconds ago
+
+this_script_name="$(basename "$0")"
+
+function usage {
+	{
+		if [[ $* != "" ]] ; then
+			echo -e "$*"
+		fi
+		local command=""
+		echo -e "Date Calculator"
+		echo -e "Calculate Date for some time ago"
+		echo -e ""
+		echo -e "Usage:"
+		echo -e "$this_script_name --get <time_unit|format> --for <time|filename> --starting-at <"
+		echo -e ""
+		echo -e "\t--get\tReturn age in given time_unit"
+		echo -e "\t--for\tDate to calculate age of"
+		echo -e "\t--starting-at\tReference date to calculate '--for' date age. Default is 'now'"
+		echo -e ""
+		echo -e "\ttime"
+		echo -e "\t\tThis uses the natural language processing of GNU 'date'. Modify by using"
+		echo -e "\t\t'week_start' or 'week_end' before date description"
+		echo -e ""
+		echo -e "\ttime_unit"
+		echo -e "\t\t- weeks_ago\tReturn age in number of ISO Weeks ago"
+		echo -e "\t\t- days_ago\tReturn age in number of days ago"
+		echo -e "\t\t- seconds_ago\tReturn age in number of seconds ago"
+		echo -e "\t\t- week_start\tReturn date of Start of Week of '--for' date"
+		echo -e "\t\t- week_start\tReturn date of End of Week of '--for' date"
+		echo -e ""
+		echo -e "\tformat"
+		echo -e "\t\tReturn age using GNU 'date' format"
+		echo -e ""
+		echo -e "Examples:"
+		echo -e ""
+		echo -e "\tCalculate days_ago for End of Week two weeks ago"
+				command="$this_script_name --get days_ago --for 'week_end 2 weeks ago'"
+		echo -e "\t\$> $command"
+		echo -e "\t$($command)"
+		echo -e ""
+		echo -e "\tCalculate days_ago for May 20 2017, Starting At July 15 2017"
+				command="$this_script_name --get days_ago --for '2017-05-20' --starting-at '2017-07-15'"
+		echo -e "\t\$> $command"
+		echo -e "\t$($command)"
+		echo -e ""
+		echo -e ""
+		echo -e ""
+	} >&2
+}
+
+function calc_week_start_end {
+		this_week_end_date="$(date --date="Saturday $weeks_ago weeks ago" +%Y-%m-%d )"
+		this_week_end_seconds="$(date --date="$this_week_end_date" +%s)"
+		this_week_end_days_ago="$(get_days_ago_from_seconds_ago $this_week_end_seconds)"
+		this_week_start_date="$(date --date="Sunday $(( weeks_ago+0 )) weeks ago" +%Y-%m-%d )"
+		this_week_start_seconds="$(date --date="$this_week_start_date" +%s)"
+		this_week_start_days_ago="$(get_days_ago_from_seconds_ago $this_week_start_seconds)"
+}
+
+function get_date_for {
+	local for_date="${1-for_date}"
+	local starting_at="${2-$starting_at}"
+	local format="${3-$format}"
+
+	local date="$(date --date="$for_date" "$format")"
+
+	echo "$date"
+}
+
+function get_month_number_for {
+	local for_date="${1-for_date}"
+	local month_number="$( date --date="$for_date" +%m )"
+	echo "$month_number"
+}
+
+function get_week_number_for {
+	local for_date="${1-for_date}"
+	local week_number="$( date --date="$for_date" +%V )"
+	echo "$week_number"
+}
+
+function get_day_number_for {
+	local for_date="${1-for_date}"
+	local day_number="$( date --date="$for_date" +%d )"
+	echo "$day_number"
+}
+
+function get_seconds_for {
+	local for_date="${1-for_date}"
+	local seconds="$( date --date="$for_date" +%s )"
+	echo "$seconds"
+}
+
+function get_years_ago_for {
+	local for_date="${1-for_date}"
+	local starting_at="${2-$starting_at}"
+
+	local for_year="$(date --date="$for_date" +%Y )"
+	local current_year="$(date --date="$starting_at" +%Y)"
+
+	(( years_ago = current_year - for_year ))
+
+	echo "$years_ago"
+}
+
+function get_months_ago_for {
+	local for_date="${1-for_date}"
+	local starting_at="${2-$starting_at}"
+
+	local for_year="$(date --date="$for_date" +%Y )"
+	local for_month="$(date --date="$for_date" +%m )"
+	local current_year="$(date --date="$starting_at" +%Y)"
+	local current_month="$(date --date="$starting_at" +%m)"
+
+	if [[ $for_year -eq $current_year ]] ; then
+		(( months_ago = current_month - for_month ))
+	else
+		for year in $(seq $for_year $current_year); do
+			if [[ $year -eq $current_year ]] ; then
+				(( months_ago += current_month ))
+			elif [[ $year -gt $for_year ]] && [[ $year -lt $current_year ]] ; then
+				(( months_ago += $(date --date="Dec 31 $year" +%m) ))
+			elif [[ $year -eq $for_year ]] ; then
+				(( months_ago += $(date --date="Dec 31 $year" +%m) - for_month ))
+			else
+				echo "Invalid year '$year' between '$for_year' and '$current_year'" >&2
+			fi
+		done
+	fi
+
+	echo "$months_ago"
+}
+
+function get_weeks_ago_for {
+	local for_date="${1-for_date}"
+	local starting_at="${2-$starting_at}"
+
+	local for_year="$(date --date="$for_date" +%Y )"
+	local for_week="$(date --date="$for_date" +%V )"
+	local current_year="$(date --date="$starting_at" +%Y)"
+	local current_week="$(date --date="$starting_at" +%V)"
+
+	if [[ $for_year -eq $current_year ]] ; then
+		(( weeks_ago = current_week - for_week ))
+	else
+		for year in $(seq $for_year $current_year); do
+			if [[ $year -eq $current_year ]] ; then
+				(( weeks_ago += current_week ))
+			elif [[ $year -gt $for_year ]] && [[ $year -lt $current_year ]] ; then
+				(( weeks_ago += $(date --date="Dec 31 $year" +%V) ))
+			elif [[ $year -eq $for_year ]] ; then
+				(( weeks_ago += $(date --date="Dec 31 $year" +%V) - for_week ))
+			else
+				echo "Invalid year '$year' between '$for_year' and '$current_year'" >&2
+			fi
+		done
+	fi
+
+	echo "$weeks_ago"
+}
+
+function get_days_ago_for {
+	local for_date="${1-for_date}"
+	local starting_at="${2-$starting_at}"
+
+	local for_year="$(date --date="$for_date" +%Y )"
+	local for_day="$(date --date="$for_date" +%d )"
+	local current_year="$(date --date="$starting_at" +%Y)"
+	local current_day="$(date --date="$starting_at" +%d)"
+
+	if [[ $for_year -eq $current_year ]] ; then
+		(( days_ago = current_day - for_day ))
+	else
+		for year in $(seq $for_year $current_year); do
+			if [[ $year -eq $current_year ]] ; then
+				(( days_ago += current_day ))
+			elif [[ $year -gt $for_year ]] && [[ $year -lt $current_year ]] ; then
+				(( days_ago += $(date --date="Dec 31 $year" +%d) ))
+			elif [[ $year -eq $for_year ]] ; then
+				(( days_ago += $(date --date="Dec 31 $year" +%d) - for_day ))
+			else
+				echo "Invalid year '$year' between '$for_year' and '$current_year'" >&2
+			fi
+		done
+	fi
+
+	echo "$days_ago"
+}
+
+function get_seconds_ago_for {
+	local for_date="${1-for_date}"
+	local starting_at="${2-$starting_at}"
+	local for_date="$1"
+	local starting_at="$2"
+
+	local for_seconds="$(date --date="$for_date" +%s)"
+	local current_seconds="$(date --date="$starting_at" +%s)"
+
+	(( seconds_ago = current_seconds - for_seconds ))
+}
+
+function get_date_range_regex_for {
+	local for_date="${1-for_date}"
+	local starting_at="${2-$starting_at}"
+
+	for_days_ago="$(get_days_ago_for "$for_date" "now")"
+	starting_days_ago="$(get_days_ago_for "$starting_at" "now")"
+
+	local days_ago_regex=""
+	for days_ago in $(seq $starting_days_ago $for_days_ago) ; do
+		days_ago_regex+="$(get_date_for "$days_ago days ago" )|"
+	done
+
+	echo "(${days_ago_regex%|})"
+}
+
+while (( $# )) ; do
+	case "$1" in
+		--debug | debug )
+			arg_debug=true
+			shift
+			;;
+		--get | get )
+			arg_unit="$2"
+			shift 2
+			;;
+		--format | format)
+			arg__format="$2"
+			shift 2
+			;;
+		--for | for )
+			arg_for_date="$2"
+			shift 2
+			;;
+		--starting-at | starting-at )
+			arg_starting_at="$2"
+			shift 2
+			;;
+	esac
+done
+
+debug="${arg_debug-false}"
+$debug && set -x
+
+default_format="+%Y-%m-%d"
+format="${arg_format-$default_format}"
+
+unit="${arg_unit-date}"
+for_date="${arg_for_date-now}"
+
+starting_at="$(date --date "${arg_starting_at-now}" +%Y-%m-%d )"
+
+get_${unit}_for "$for_date"
