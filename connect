@@ -40,7 +40,7 @@ function usage() {
 }
 
 # Host is always first argument
-host="${1-}"
+arg_host="${1-}"
 shift
 
 # Parse remaining arguments
