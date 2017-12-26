@@ -90,10 +90,11 @@ if [[ $mode = attach ]] ; then
 	elif [[ $attach_program = tmux ]] ; then
 		attach_existing="tmux attach"
 		attach_new="tmux"
-		if [[ $attach_session != ""]] ; then
+		if [[ $attach_session != "" ]] ; then
 			attach_existing+=" -t $attach_session"
 			attach_new+=" new -s $attach_session"
 		fi
+	fi
 	attach_command="$attach_existing || $attach_new || bash -l"
 else
 	attach_command=""
