@@ -61,8 +61,8 @@ while (( $# )) ; do
 done
 
 # Assign parameters to defaults or from arguments
-host="${arg_host-""}"
-mode="${arg_mode-""}"
+host="${arg_host-}"
+mode="${arg_mode-}"
 command="${arg_command-}"
 
 if [[ $host = "" ]] ; then
@@ -78,8 +78,6 @@ else
 	attach_program="tmux"
 	attach_session=""
 fi
-
-
 
 if [[ $mode = attach ]] ; then
 	if [[ $attach_program = screen ]] ; then
