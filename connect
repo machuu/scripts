@@ -100,8 +100,6 @@ else
 	attach_command=""
 fi
 
-command+="$attach_command"
-
 echo Connecting to $host ...
 
 while : ; do
