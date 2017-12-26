@@ -105,6 +105,7 @@ echo Connecting to $host ...
 while : ; do
 	ssh -o ConnectTimeout=3 \
 		$host \
+		-t \
 		$attach_command \
 		$command 2>/dev/null
 	ssh_exit_code="$?"
